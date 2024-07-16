@@ -1,0 +1,14 @@
+services:
+  ansible:
+    build: .
+    volumes:
+      - ./app:/ansible
+    env_file:
+      - .env
+    environment:
+      - SFTP_HOST=${SFTP_HOST}
+      - SFTP_USER=${SFTP_USER}
+      - SFTP_PASSWORD=${SFTP_PASSWORD}
+      - LOCAL_DIR_NAME=${LOCAL_DIR_NAME:-files}
+      - REMOTE_DIR_NAME=${REMOTE_DIR_NAME}
+    command: tail -f /dev/null

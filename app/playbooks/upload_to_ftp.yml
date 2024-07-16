@@ -1,0 +1,59 @@
+---
+- name: Subir archivos a servidor SFTP y luego eliminarlos
+  hosts: local
+  gather_facts: false
+  vars:
+    sftp_host: "{{ lookup('env', 'SFTP_HOST') }}"
+    sftp_user: "{{ lookup('env', 'SFTP_USER') }}"
+    sftp_password: "{{ lookup('env', 'SFTP_PASSWORD') }}"
+    local_dir_name: "{{ lookup('env', 'LOCAL_DIR_NAME') | default('files', true) }}"
+    local_dir: "/ansible/{{ local_dir_name }}"
+    remote_dir: "{{ lookup('env', 'REMOTE_DIR_NAME') }}"
+    log_file: "/ansible/transfer.log"
+
+  tasks:
+    - name: Obtener fecha y hora actuales
+      ansible.builtin.setup:
+      register: setup_output
+
+    - name: Establecer variable de fecha y hora actuales
+      ansible.builtin.set_fact:
+        current_time: "{{ setup_output.ansible_facts.ansible_date_time.iso8601 }}"
+
+    - name: Listar archivos en el directorio local
+      ansible.builtin.find:
+        paths: "{{ local_dir }}"
+        file_type: file
+      register: files_to_transfer
+
+    - name: Subir archivos usando comando sftp
+      ansible.builtin.shell: |
+        sshpass -p '{{ sftp_password }}' sftp -o StrictHostKeyChecking=no {{ sftp_user }}@{{ sftp_host }} << EOF
+        cd {{ remote_dir }}
+        put {{ item.path }}
+        quit
+        EOF
+      args:
+        executable: /bin/bash
+      loop: "{{ files_to_transfer.files }}"
+      when: files_to_transfer.files | length > 0
+
+    - name: Registrar archivos transferidos en el log
+      ansible.builtin.lineinfile:
+        path: "{{ log_file }}"
+        line: "{{ item.path }} transferred on {{ current_time }}"
+        create: yes
+      loop: "{{ files_to_transfer.files }}"
+      when: files_to_transfer.files | length > 0
+
+    - name: Eliminar archivos locales después de la transferencia
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ files_to_transfer.files }}"
+      when: files_to_transfer.files | length > 0
+
+    - name: Mostrar mensaje si no hay archivos para transferir
+      ansible.builtin.debug:
+        msg: "No hay archivos para transferir en {{ local_dir }}"
+      when: files_to_transfer.files | length == 0
